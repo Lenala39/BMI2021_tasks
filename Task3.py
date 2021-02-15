@@ -1,5 +1,7 @@
 from toolbox import utils, ecog_load_data
-from mne.filter import filter
+import mne.filter as filter
+import numpy as np
+import scipy.linalg as linalg
 
 def filter_data_ecog(training_data_ecog):
     # sfreq = sample frequency, iir = forward-backward filtering (via filtfilt)
@@ -33,9 +35,8 @@ def input_formatting(data_ecog_neg, data_ecog_pos):
     # average over the epochs (trials) -> 278 trials, 64 channels, 3000 samples
     # result should be 64x3000 matrix
     print("Shape of input: ", data_ecog_neg.shape)
-    filtered_data_ecog_pos = np.mean(data_ecog_pos, axis=1)
-    filtered_data_ecog_neg = np.mean(data_ecog_neg, axis=1)
-    print("Shape of averaded data: ", filtered_data_ecog.shape)
+    filtered_data_ecog_pos = np.mean(data_ecog_pos, axis=0)
+    filtered_data_ecog_neg = np.mean(data_ecog_neg, axis=0)
     return filtered_data_ecog_neg, filtered_data_ecog_pos
 
 def compute_covariance_matrices(filtered_data_ecog_neg, filtered_data_ecog_pos):
@@ -116,64 +117,74 @@ def CSP(ecog_neg, ecog_pos):
     return W
 
 def cross_validation_ecog(ecog_neg, ecog_pos):
-  """
-  Implements the split for the cross-validation for the eCoG data 
+    """
+    Implements the split for the cross-validation for the eCoG data 
 
-  Results in 5 tuples (one per fold) that each contain a tuple with the
-  positive and negative instances 
-  all_folds[i] = (training_data, testing_data) 
-    with training_data = (neg_data, pos_data) 
-    and testing_data = (neg_data, pos_data)
+    Results in 5 tuples (one per fold) that each contain a tuple with the
+    positive and negative instances 
+    all_folds[i] = (training_data, testing_data) 
+        with training_data = (neg_data, pos_data) 
+        and testing_data = (neg_data, pos_data)
 
-  ecog_neg: only negatively labeled instances (139, 64)
-  ecog_pos: only positively labeled instances (139, 64)
+    ecog_neg: only negatively labeled instances (139, 64)
+    ecog_pos: only positively labeled instances (139, 64)
 
-  returns: all_folds (dict): dict of len 5 with the data for each fold split in training and test
-  """
-  all_folds = {}
-  for i in range(1,6):
-    # get the starting index for the test set 
-    try:
-      test_start = int(len(ecog_neg) * ((i-1)/5))
-    # if it is the first fold -> start at 0
-    except ZeroDivisionError:
-      test_start = 0
-    # end index is 1/5, 2/5, ... of the data 
-    test_end = int(len(ecog_neg) * (i/5))
-    # make tuple for the test containing neg and pos arrays
-    test = (ecog_neg[test_start:test_end], ecog_pos[test_start:test_end])
-    print(f"Test set for fold number {i} starts at {test_start} and ends at {test_end}!")
+    returns: all_folds (dict): dict of len 5 with the data for each fold split in training and test
+    """
+    all_folds = {}
+    for i in range(1,6):
+        # get the starting index for the test set 
+        try:
+            test_start = int(len(ecog_neg) * ((i-1)/5))
+            # if it is the first fold -> start at 0
+        except ZeroDivisionError:
+            test_start = 0
+        # end index is 1/5, 2/5, ... of the data 
+        test_end = int(len(ecog_neg) * (i/5)) - 1 
+        # make tuple for the test containing neg and pos arrays
+        test = (ecog_neg[test_start:test_end], ecog_pos[test_start:test_end])
+        print(f"Test set for fold number {i} starts at {test_start} and ends at {test_end}!")
 
-    # concat the training data 
-    # take sections before the test index (empty in first fold) and after (empty in last fold)
-    train_neg = np.concatenate( (ecog_neg[0:test_start], (ecog_neg[test_end+1:138])) ) 
-    train_pos = np.concatenate( (ecog_pos[0:test_start], (ecog_pos[test_end+1:138])) ) 
-    assert len(train_neg) == len(train_pos)
-    
-    print("Shape of training data neg ", train_neg.shape)
-    print(f"{len(train_neg)} training samples and {len(test[0])} test samples with a ratio of {round(len(test[0])/len(train_neg),2)}!")
+        # concat the training data 
+        # take sections before the test index (empty in first fold) and after (empty in last fold)
+        train_neg = np.concatenate( (ecog_neg[0:test_start], (ecog_neg[test_end+1:138])) ) 
+        train_pos = np.concatenate( (ecog_pos[0:test_start], (ecog_pos[test_end+1:138])) ) 
+        assert len(train_neg) == len(train_pos)
+        
+        print("Shape of training data neg ", train_neg.shape)
+        print(f"{len(train_neg)} training samples and {len(test[0])} test samples with a ratio of {round(len(test[0])/len(train_neg),2)}!")
 
-    train = (train_neg, train_pos)
-    # append to the folds
-    all_folds[i] = (train, test)
+        train = (train_neg, train_pos)
+        # append to the folds
+        all_folds[i] = (train, test)
     return all_folds
 
 if __name__ == "__main__":
     # 0. load data from file
-    training_data_ecog, training_label_ecog = load_ecog_train()
+    training_data_ecog, training_label_ecog = ecog_load_data.ecog_load_data_train()
 
     # preprocessing
     # filtering using mne + grouping according to label
     ecog_neg, ecog_pos = data_preprocessing(training_data_ecog, training_label_ecog)
-    ecog_neg.shape
+    print(ecog_neg.shape)
 
     all_folds = cross_validation_ecog(ecog_neg, ecog_pos)
     for fold, data in all_folds.items():
         training_data_neg = data[0][0]
         training_data_pos = data[0][1]
-        #print(training_data_neg.shape)
-        #print(training_data_pos.shape)
-        neg, pos = input_formatting(training_data_neg, training_data_pos)
+        
+        # input formatting (average over all epochs)
+        # neg, pos = input_formatting(training_data_neg, training_data_pos)
+
+        # compute projection matrix W
         W = CSP(training_data_neg, training_data_pos)
-        first_col = W[:,0]
-        last_col = W[:, -1]
+        first_two_cols = W[:, [0,1]]
+        last_two_cols =W[:, [-2,-1]]
+        W_reduced = np.concatenate((first_two_cols, last_two_cols), axis=1)
+
+        # apply W to training and test
+        for i in range(len(training_data_ecog)):
+            epoch = training_data_ecog[i]
+            epoch_label = training_label_ecog[i]
+            out = np.dot(epoch.transpose(), W_reduced)
+            featurevec = np.log(np.var(out, axis=0))
