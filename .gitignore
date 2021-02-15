@@ -3,6 +3,9 @@
 # Edit at https://www.toptal.com/developers/gitignore?templates=vscode,python,venv
 
 ### Python ###
+*.mat
+data/ecog_mi/Competition_test.mat
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
