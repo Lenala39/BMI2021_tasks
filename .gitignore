@@ -5,6 +5,8 @@
 ### Python ###
 *.mat
 data/ecog_mi/Competition_test.mat
+.idea
+
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
