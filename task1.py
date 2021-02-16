@@ -141,6 +141,8 @@ for channel in avrgPerChannel:
   for sample in channel[1]:
     sample = sample/targetAmount
 
+np.save("avrgPerChannel", avrgPerChannel)
+
 #plotting
 #generate x axis values
 timeOfSample = np.arange(205) * (1000/256)
