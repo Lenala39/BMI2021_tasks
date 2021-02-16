@@ -19,28 +19,29 @@ channelAmount = data.shape[1]
 
 #-----------------------------------------------------------------------
 
-#Dimensions the data will be reduced to
-sampleAmount = 205
-trialAmount = 4
-subtrialAmount = 2
-flashAmount = 3
-epochAmount = trialAmount * subtrialAmount * flashAmount
-dataAmount = 5000
-channelAmount = 5
+if (True):
+	#Dimensions the data will be reduced to
+	sampleAmount = 205
+	trialAmount = 4
+	subtrialAmount = 2
+	flashAmount = 3
+	epochAmount = trialAmount * subtrialAmount * flashAmount
+	dataAmount = 5000
+	channelAmount = 5
 
-#Generating smaller testdata. Reduces data to the dimensions given above, cutting everything beyond those.
-#This overrides the loaded data, so only use when testing.
-data = np.delete(data, range(dataAmount,data.shape[0]), 0)
-data = np.delete(data, range(channelAmount,data.shape[1]), 1)
-onsets = np.delete(onsets, range(trialAmount,onsets.shape[0]), 0)
-onsets = np.delete(onsets, range(subtrialAmount,onsets.shape[1]), 1)
-onsets = np.delete(onsets, range(flashAmount,onsets.shape[2]), 2)
-#this might need to be edited for last 205 values, so they are never the closest to any onset
-timestamps = np.delete(timestamps, range(dataAmount,timestamps.shape[0]), 0)
-flashseq = np.delete(flashseq, range(trialAmount,flashseq.shape[0]), 0)
-flashseq = np.delete(flashseq, range(subtrialAmount,flashseq.shape[1]), 1)
-flashseq = np.delete(flashseq, range(flashAmount,flashseq.shape[2]), 2)
-targets = np.delete(targets, range(trialAmount,targets.shape[0]), 0)
+	#Generating smaller testdata. Reduces data to the dimensions given above, cutting everything beyond those.
+	#This overrides the loaded data, so only use when testing.
+	data = np.delete(data, range(dataAmount,data.shape[0]), 0)
+	data = np.delete(data, range(channelAmount,data.shape[1]), 1)
+	onsets = np.delete(onsets, range(trialAmount,onsets.shape[0]), 0)
+	onsets = np.delete(onsets, range(subtrialAmount,onsets.shape[1]), 1)
+	onsets = np.delete(onsets, range(flashAmount,onsets.shape[2]), 2)
+	#this might need to be edited for last 205 values, so they are never the closest to any onset
+	timestamps = np.delete(timestamps, range(dataAmount,timestamps.shape[0]), 0)
+	flashseq = np.delete(flashseq, range(trialAmount,flashseq.shape[0]), 0)
+	flashseq = np.delete(flashseq, range(subtrialAmount,flashseq.shape[1]), 1)
+	flashseq = np.delete(flashseq, range(flashAmount,flashseq.shape[2]), 2)
+	targets = np.delete(targets, range(trialAmount,targets.shape[0]), 0)
 
 #-----------------------------------------------------------------------
 
@@ -114,14 +115,16 @@ avrgPerChannel = np.zeros((channelAmount, 2, sampleAmount))
 #adding up all the epochs samples with same channel and isTarget
 epochId = -1
 for epoch in epochs:
-  epochId += 1
-  sampleId = -1
-  for sample in epoch:
-    sampleId += 1
-    channelId = -1
-    for channel in sample:
-      channelId += 1
-      avrgPerChannel[channelId][int(isTarget[epochId][0])][sampleId] += channel
+	epochId += 1
+	sampleId = -1
+	for sample in epoch:
+		sampleId += 1
+		channelId = -1
+		for channel in sample:
+			channelId += 1
+			avrgPerChannel[channelId][int(isTarget[epochId][0])][sampleId] += channel
+			#if (int(isTarget[epochId][0]) == 0 and channelId == 1):
+				#print(channel)
 
 #calculate total target/non-target epoch amounts
 nonTargetAmount = 0
@@ -134,13 +137,18 @@ for epoch in isTarget:
 
 #divide all epoch sample summs with total target/non-target epoch amounts
 for channel in avrgPerChannel:
-  #non-targets
-  for sample in channel[0]:
-    sample = sample/nonTargetAmount
-  #targets
-  for sample in channel[1]:
-    sample = sample/targetAmount
-
+	#non-targets
+	sampleId = -1
+	for sample in channel[0]:
+		sampleId += 1
+		channel[0][sampleId] = sample/nonTargetAmount
+	#targets
+	sampleId = -1
+	for sample in channel[1]:
+		sampleId += 1
+		channel[1][sampleId] = sample/targetAmount
+    
+#print(avrgPerChannel[1][0])
 np.save("avrgPerChannel", avrgPerChannel)
 
 #plotting
@@ -149,7 +157,7 @@ timeOfSample = np.arange(205) * (1000/256)
 channelId = -1
 for channel in avrgPerChannel:
   channelId += 1
-  plt.title("ERP Plot; Channel " + str(channelId))
+  plt.title("ERP Plot; Channel " + str(channelId + 1))
   plt.plot(timeOfSample, channel[1], label="Target")
   plt.plot(timeOfSample, channel[0], label="Non-Target")
   plt.legend()
