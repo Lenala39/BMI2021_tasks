@@ -248,20 +248,25 @@ def fda_train(data, label):
             except ValueError: # first iteration -> first vec is start of data-array
                 non_targets = data[i]
 
+    # mean of each class
     target_mean = np.mean(targets, axis=0)
     non_target_mean = np.mean(non_targets, axis=0)
     
+    # covariance matrix within each class (scatter matrix)
     St = cov_shrinkage(targets)
     Snt = cov_shrinkage(non_targets)
     
+    # (within-class-scatter)
     Sw = St + Snt
     
     invSw = linalg.inv(Sw)
+    # Rayleigh coefficient
     fda_w = invSw @ (target_mean-non_target_mean).T
     print("fda.w size: ",fda_w.shape)
 
     fda_target_mu = np.dot(target_mean, fda_w)
     fda_non_target_mu = np.dot(non_target_mean, fda_w)
+    # Fisher criterium
     fda_b = (fda_target_mu + fda_non_target_mu) / 2
     
     return fda_w, fda_b
@@ -279,7 +284,9 @@ def fda_test(data, fda_w, fda_b):
         label   class label shaped [epochs]
     """
     scores = data @ fda_w
+    scores = (scores - scores.min()) / np.ptp(scores)
     label = np.sign(scores - fda_b)
+    label = np.where(label < 0, 0, label) # convert -1 to 0
     return scores, label
  
 
