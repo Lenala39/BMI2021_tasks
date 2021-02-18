@@ -177,7 +177,8 @@ def cross_validation_ecog(ecog_neg, ecog_pos, print_status=False):
             print("Shape of training data neg ", train_neg.shape)
             print(f"{len(train_neg)} training samples and {len(test[0])} test samples with a ratio of {round(len(test[0])/len(train_neg),2)}!")
             print(f"appended to fold {i}")
-
+        # TODO: change back when handing in: Faster Debugging
+        return all_folds
     return all_folds
 
 def apply_projection_matrix(data, W):
@@ -195,39 +196,61 @@ def apply_projection_matrix(data, W):
     return projected_vectors    
 
 def concat_split_data(training_data_neg, training_data_pos, testing_data_neg, testing_data_pos):
-        # concatenate all pos/neg in train or test to apply to W    
-        fold_training_data = np.concatenate( (training_data_neg, training_data_pos) )
-        fold_testing_data = np.concatenate( (testing_data_neg, testing_data_pos) )
+    # concatenate all pos/neg in train or test to apply to W    
+    fold_training_data = np.concatenate( (training_data_neg, training_data_pos) )
+    fold_testing_data = np.concatenate( (testing_data_neg, testing_data_pos) )
+    
+    # create label-vecs for the concatenated train/test vecs in the fold
+    label_neg_train = np.full((len(training_data_neg),1), 0)
+    label_pos_train = np.full((len(training_data_pos), 1), 1)
+    labels_train = np.concatenate( (label_neg_train, label_pos_train ) ).flatten()
+
+    assert len(fold_training_data) == len(labels_train)
+    
+    # shuffle around the instances
+    ordering_training = np.arange(len(fold_training_data))
+    np.random.shuffle(ordering_training)
+    fold_training_data = fold_training_data[ordering_training]
+    labels_train = labels_train[ordering_training]
+    
+    # concat the labels
+    label_neg_test = np.full((len(testing_data_neg),1), 0)
+    label_pos_test = np.full((len(testing_data_pos),1), 1)
+    labels_test = np.concatenate( (label_neg_test, label_pos_test ) ).flatten()
+    
+    assert len(fold_testing_data) == len(labels_test)
+
+    # shuffle around the instances
+    ordering_testing = np.arange(len(fold_testing_data))
+    np.random.shuffle(ordering_testing)
+    fold_testing_data = fold_testing_data[ordering_testing]
+    labels_test = labels_test[ordering_testing]
+
+    return fold_training_data, fold_testing_data, labels_train, labels_test
+
+
+def compute_tps_and_fps(ys, absolute=False):
+    bias = np.linspace(0,1,100)
+
+    true_positives = []
+    false_positives = []
+    for i in bias:
+        # make everything below bias 0, rest 1
+        ys_bias = [0 if elem < i else 1 for elem in list(ys)]
+        ys_bias = np.array(ys_bias)
+        TP,FP,FN,TN = utils.calc_confusion(ys_bias, labels_test)
         
-        # create label-vecs for the concatenated train/test vecs in the fold
-        label_neg_train = np.full((len(training_data_neg),1), 0)
-        label_pos_train = np.full((len(training_data_pos), 1), 1)
-        labels_train = np.concatenate( (label_neg_train, label_pos_train ) ).flatten()
+        # return the absolute number of TP and FPs
+        if absolute:
+            true_positives.append(TP)
+            false_positives.append(FP)
+        # return the TP/FP-rate as given by the formula
+        else:
+            true_positives.append(TP / (TP + FN))
+            false_positives.append(FP / (TN + FP))
 
-        assert len(fold_training_data) == len(labels_train)
-        
-        # shuffle around the instances
-        ordering_training = np.arange(len(fold_training_data))
-        np.random.shuffle(ordering_training)
-        fold_training_data = fold_training_data[ordering_training]
-        labels_train = labels_train[ordering_training]
-        
-        # concat the labels
-        label_neg_test = np.full((len(testing_data_neg),1), 0)
-        label_pos_test = np.full((len(testing_data_pos),1), 1)
-        labels_test = np.concatenate( (label_neg_test, label_pos_test ) ).flatten()
-        
-        assert len(fold_testing_data) == len(labels_test)
+    return true_positives, false_positives
 
-        # shuffle around the instances
-        ordering_testing = np.arange(len(fold_testing_data))
-        np.random.shuffle(ordering_testing)
-        fold_testing_data = fold_testing_data[ordering_testing]
-        labels_test = labels_test[ordering_testing]
-
-
-
-        return fold_training_data, fold_testing_data, labels_train, labels_test
 
 if __name__ == "__main__":
     # 0. load data from file
@@ -251,9 +274,10 @@ if __name__ == "__main__":
         # compute (already reduced) projection matrix W
         # W = CSP(training_data_neg, training_data_pos)
 
+        # TODO: remove when handing in: only for quicker debugging!!!
         with open("/home/lena/Apps/bmi2020_tasks/W_save.npy", "rb") as infile:
             W = np.load(infile)
-
+        
         # get the concatenated data (not split in pos and neg) + labels
         fold_training_data, fold_testing_data, labels_train, labels_test = concat_split_data(training_data_neg, training_data_pos, testing_data_neg, testing_data_pos)
 
@@ -265,29 +289,36 @@ if __name__ == "__main__":
         fda_w, fda_b = utils.fda_train(data=projected_vecs_train, label=labels_train)
         
         # compute the ys (classifications)
-        ys = np.matmul(projected_vecs_test, fda_w)
+        # ys = np.matmul(projected_vecs_test, fda_w)
         
         # normalize the ys to [0,1]
-        ys = (ys - ys.min()) / np.ptp(ys)
-        bias = np.linspace(0,1,100)
+        # ys = (ys - ys.min()) / np.ptp(ys)
 
+        
+        # compute test classification over 100 bias values
         true_positives = []
         false_positives = []
-        for i in bias:
-            # make everything below bias 0, rest 1
-            ys_bias = [0 if elem < i else 1 for elem in list(ys)]
-            ys_bias = np.array(ys_bias)
-            TP,FP,FN,TN = utils.calc_confusion(ys_bias, labels_test)
-            true_positives.append(TP / (TP + FN))
-            false_positives.append(FP / (TN + FP))
-        
-        plt.plot(true_positives, false_positives )
-        plt.show(block=True)
+        true_positives_rate = []
+        false_positives_rate = []
+        bias = np.linspace(0,1,10)
+        for b in bias:
+            scores, labels = utils.fda_test(projected_vecs_test, fda_w, fda_b=b)
+            TP,FP,FN,TN = utils.calc_confusion(labels, labels_test)
+            true_positives_rate.append(TP / (TP + FN))
+            try:
+                false_positives_rate.append(FP / (TN + FP)) 
+            except ZeroDivisionError:
+                false_positives_rate.append(0.0)
+            true_positives.append(TP)
+            false_positives.append(FP)
 
+        # true_positives, false_positives = compute_tps_and_fps(ys=ys, absolute=True)
+        plt.plot(true_positives, false_positives)
+        #plt.plot(true_positives_rate, false_positives_rate)
+        plt.show(block=True)
 
         roc = np.vstack( (true_positives, false_positives ))
         auc = utils.calc_AUC(roc)
         print(auc)
             
             
-
