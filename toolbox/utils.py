@@ -18,7 +18,7 @@ def downsample(data,fac,avg="pick",axis=0):
 
     tmp = np.zeros((2,4))
     dims = data.shape
-    X = [];
+    X = []
 
     if len(dims)==3:
         samples = dims[1]
@@ -232,9 +232,22 @@ def fda_train(data, label):
     OUTPUT
     
     """
-    targets = data[label==1, :]
-    non_targets = data[label!=1, :]
-    
+    #targets = data[label==1, :]
+    #non_targets = data[label!=1, :]
+    targets = None
+    non_targets = None
+    for i in range(len(data)):
+        if label[i] == 1:
+            try:
+                targets = np.vstack((targets, data[i]))
+            except ValueError: # first iteration -> first vec is start of data-array
+                targets = data[i]
+        else:
+            try:
+                non_targets = np.vstack((non_targets, data[i]))
+            except ValueError: # first iteration -> first vec is start of data-array
+                non_targets = data[i]
+
     target_mean = np.mean(targets, axis=0)
     non_target_mean = np.mean(non_targets, axis=0)
     
@@ -244,7 +257,7 @@ def fda_train(data, label):
     Sw = St + Snt
     
     invSw = linalg.inv(Sw)
-    fda_w = invSw @ (posmean-negmean).T
+    fda_w = invSw @ (target_mean-non_target_mean).T
     print("fda.w size: ",fda_w.shape)
 
     fda_target_mu = np.dot(target_mean, fda_w)
@@ -266,7 +279,7 @@ def fda_test(data, fda_w, fda_b):
         label   class label shaped [epochs]
     """
     scores = data @ fda_w
-    label = np.sign(score - fda_b)
+    label = np.sign(scores - fda_b)
     return scores, label
  
 
