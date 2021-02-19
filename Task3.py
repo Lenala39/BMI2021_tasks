@@ -3,6 +3,8 @@ import mne.filter as filter
 import numpy as np
 import scipy.linalg as linalg
 from matplotlib import pyplot as plt
+import os
+
 
 def filter_data_ecog(training_data_ecog):
     # sfreq = sample frequency, iir = forward-backward filtering (via filtfilt)
@@ -119,9 +121,9 @@ def CSP(ecog_neg, ecog_pos):
     print("compute W")
     W = np.dot(np.transpose(common_eigenvectors),P).transpose() # todo: nochmal T
     
-    # reduce projection matrix to 2 cols on each side
-    first_two_cols = W[:, [0,1]]
-    last_two_cols =W[:, [-2,-1]]
+    # reduce projection matrix to x cols on each side
+    first_two_cols = W[:, [0,1,2,3, 4, 5]]
+    last_two_cols =W[:, [-6,-5, -4, -3,-2,-1]]
     W_reduced = np.concatenate((first_two_cols, last_two_cols), axis=1)
 
 
@@ -153,20 +155,18 @@ def cross_validation_ecog(ecog_neg, ecog_pos, print_status=False):
         # end index is 1/5, 2/5, ... of the data 
         test_end = int(len(ecog_neg) * (i/5)) - 1 
         # make tuple for the test containing neg and pos arrays
-        test = (ecog_neg[test_start:test_end], ecog_pos[test_start:test_end])
+        #test = (ecog_neg[test_start:test_end], ecog_pos[test_start:test_end])
         
 
         # concat the training data 
         # take sections before the test index (empty in first fold) and after (empty in last fold)
-        train_neg = np.concatenate( (ecog_neg[0:test_start], (ecog_neg[test_end+1:138])) ) 
-        train_pos = np.concatenate( (ecog_pos[0:test_start], (ecog_pos[test_end+1:138])) ) 
-        assert len(train_neg) == len(train_pos)
+        #train_neg = np.concatenate( (ecog_neg[0:test_start], (ecog_neg[test_end+1:138])) ) 
+        #train_pos = np.concatenate( (ecog_pos[0:test_start], (ecog_pos[test_end+1:138])) ) 
+        #assert len(train_neg) == len(train_pos)
 
         temp = {
-            "train_neg": train_neg,
-            "train_pos": train_pos,
-            "test_neg": ecog_neg[test_start:test_end],
-            "test_pos": ecog_neg[test_start:test_end]
+            "test_start": test_start, 
+            "test_end": test_end, 
         }
 
         # append to the folds
@@ -174,11 +174,10 @@ def cross_validation_ecog(ecog_neg, ecog_pos, print_status=False):
 
         if print_status:
             print(f"Test set for fold number {i} starts at {test_start} and ends at {test_end}!")
-            print("Shape of training data neg ", train_neg.shape)
-            print(f"{len(train_neg)} training samples and {len(test[0])} test samples with a ratio of {round(len(test[0])/len(train_neg),2)}!")
+            #print("Shape of training data neg ", train_neg.shape)
+            #print(f"{len(train_neg)} training samples and {len(test[0])} test samples with a ratio of {round(len(test[0])/len(train_neg),2)}!")
             print(f"appended to fold {i}")
-        # TODO: change back when handing in: Faster Debugging
-        return all_folds
+        
     return all_folds
 
 def apply_projection_matrix(data, W):
@@ -226,10 +225,16 @@ def concat_split_data(training_data_neg, training_data_pos, testing_data_neg, te
     fold_testing_data = fold_testing_data[ordering_testing]
     labels_test = labels_test[ordering_testing]
 
+    # set to None as gc
+    training_data_neg = None
+    training_data_pos = None
+    testing_data_neg = None
+    testing_data_neg = None
+
     return fold_training_data, fold_testing_data, labels_train, labels_test
 
 
-def compute_tps_and_fps(ys, absolute=False):
+def compute_tps_and_fps(ys, labels_test, absolute=False):
     bias = np.linspace(0,1,100)
 
     true_positives = []
@@ -249,7 +254,145 @@ def compute_tps_and_fps(ys, absolute=False):
             true_positives.append(TP / (TP + FN))
             false_positives.append(FP / (TN + FP))
 
+    true_positives.sort()
+    false_positives.sort()
     return true_positives, false_positives
+
+def training_cross_val(all_folds, load_from_file=True):
+    
+    best_weight = None
+    best_weight_set = False
+    best_bias = None
+    last_auc = None
+    
+    # TODO: remove when handing in: only for quicker debugging!!!
+    if load_from_file:
+        cwd = os.getcwd()
+        # number in file-name stands for columns that were kept at each end
+        path_to_stored_W = os.path.join(cwd, "W4_save.npy")
+        with open(path_to_stored_W, "rb") as infile:
+            W = np.load(infile) # Todo: move up so only loaded once
+
+
+    for fold, index_dict in all_folds.items():
+        
+        print(f"Working on fold {fold}:")
+
+        # SPLITTING INTO TRAIN AND TEST
+        # get the correct subsets for training and testing
+        test_start = index_dict["test_start"]
+        test_end = index_dict["test_end"]
+        
+        testing_data_neg = ecog_neg[test_start:test_end]
+        testing_data_pos =  ecog_pos[test_start:test_end]
+        
+        # concat the training data 
+        # take sections before the test index (empty in first fold) and after (empty in last fold)
+        training_data_neg = np.concatenate( (ecog_neg[0:test_start], (ecog_neg[test_end+1:138])) ) 
+        training_data_pos = np.concatenate( (ecog_pos[0:test_start], (ecog_pos[test_end+1:138])) )
+
+        # COMPUTE W
+        # compute (already reduced) projection matrix W
+        if not load_from_file:
+            W = CSP(training_data_neg, training_data_pos)
+        
+        # CONCAT THE DATA FOR CLASSIFICATION
+        # get the concatenated data (not split in pos and neg) + labels
+        fold_training_data, fold_testing_data, labels_train, labels_test = concat_split_data(training_data_neg, training_data_pos, testing_data_neg, testing_data_pos)
+
+        # set to None as gc
+        training_data_neg = None
+        training_data_pos = None
+        testing_data_neg = None
+        testing_data_pos = None
+
+        # PROJECT USING W
+        # Project the training and test data
+        projected_vecs_train = apply_projection_matrix(data=fold_training_data, W=W)
+        projected_vecs_test = apply_projection_matrix(data=fold_testing_data, W=W)
+        
+        # set to None as gc
+        fold_training_data = None
+        fold_testing_data = None
+        
+        # CLASSIFY
+        # apply the fda classifier
+        fda_w, fda_b = utils.fda_train(data=projected_vecs_train, label=labels_train)
+
+        # GET FP AND TP USING fda_train()
+        # compute tps and fps over number of steps (10 for quicker debugging)
+        true_positives, false_positives = compute_tps_fps_new(projected_vecs_test, labels_test, fda_w, absolute=True, steps=100)
+
+        # set to None as gc
+        projected_vecs_test = None
+        projected_vecs_train = None
+
+        # PLOT
+        # plot the roc
+        plot_roc(true_positives, false_positives)
+        auc = compute_auc(true_positives, false_positives)
+        
+        # SELECT BEST fda_w
+        if not best_weight_set:
+            best_weight = fda_w
+            best_bias = fda_b
+            last_auc = auc
+            best_weight_set = True
+        else:
+            if auc > last_auc:
+                best_weight = fda_w
+                best_bias = fda_b
+            last_auc = auc
+    
+    return W, best_weight, best_bias
+
+
+def compute_tps_fps_new(projected_vecs_test, labels_test, fda_w, absolute=True, steps=100):
+    # compute test classification over 100 bias values
+    true_positives = []
+    false_positives = []
+    true_positives_rate = []
+    false_positives_rate = []
+    bias = np.linspace(0,1,steps)
+
+    for b in bias:
+        # use fda_test to compute the classification with the bias
+        scores, labels = utils.fda_test(projected_vecs_test, fda_w, fda_b=b)
+        # compute TP, ...
+        TP,FP,FN,TN = utils.calc_confusion(labels, labels_test)
+        
+        # only want the values (not rates)
+        if absolute:
+            true_positives.append(TP)
+            false_positives.append(FP)
+
+        else:
+            # compute the rates
+            true_positives_rate.append(TP / (TP + FN))
+            try:
+                false_positives_rate.append(FP / (TN + FP)) 
+            except ZeroDivisionError:
+                false_positives_rate.append(0.0)
+    
+    if absolute:
+        true_positives.sort()
+        false_positives.sort()
+        return true_positives, false_positives 
+    else:
+        true_positives_rate.sort()
+        false_positives_rate.sort()
+        return true_positives_rate, false_positives_rate
+
+def plot_roc(true_positives, false_positives):
+    plt.subplot(211)
+    plt.plot(false_positives, true_positives, label="ROC")
+    plt.legend(loc=1)
+    plt.show(block=True)
+
+def compute_auc(true_positives, false_positives):
+    roc = np.vstack( (true_positives, false_positives ))
+    auc = utils.calc_AUC(roc)
+    return auc
 
 
 if __name__ == "__main__":
@@ -260,65 +403,30 @@ if __name__ == "__main__":
     # filtering using mne + grouping according to label
     ecog_neg, ecog_pos = data_preprocessing(training_data_ecog, training_label_ecog)
     all_folds = cross_validation_ecog(ecog_neg, ecog_pos)
-    for fold, data in all_folds.items():
+    
+    # reset for saving space?
+    training_data_ecog = None
+    training_label_ecog = None
+    
+    # training phase
+    W, fda_w, fda_b = training_cross_val(all_folds=all_folds, load_from_file=False)
 
-        print(f"Working on fold {fold}:")
+    print("Training Done: Now Test Phase")
+    # apply to training set
+    testing_data_ecog, testing_label_ecog = ecog_load_data.ecog_load_data_test()
 
-        training_data_neg = data["train_neg"]
-        training_data_pos = data["train_pos"]
-        testing_data_neg = data["test_neg"]
-        testing_data_pos = data["test_pos"]
-        # input formatting (average over all epochs)
-        # neg, pos = input_formatting(training_data_neg, training_data_pos)
+    testing_label_ecog = np.where(testing_label_ecog == -1, 0, testing_label_ecog)
 
-        # compute (already reduced) projection matrix W
-        # W = CSP(training_data_neg, training_data_pos)
+    # filter the data with MNE bandpass
+    filtered_testing_data_ecog = filter_data_ecog(testing_data_ecog)
 
-        # TODO: remove when handing in: only for quicker debugging!!!
-        with open("/home/lena/Apps/bmi2020_tasks/W_save.npy", "rb") as infile:
-            W = np.load(infile)
-        
-        # get the concatenated data (not split in pos and neg) + labels
-        fold_training_data, fold_testing_data, labels_train, labels_test = concat_split_data(training_data_neg, training_data_pos, testing_data_neg, testing_data_pos)
+    # apply W
+    projected_vecs_test = apply_projection_matrix(filtered_testing_data_ecog, W)
 
-        # Project the training and test data
-        projected_vecs_train = apply_projection_matrix(data=fold_training_data, W=W)
-        projected_vecs_test = apply_projection_matrix(data=fold_testing_data, W=W)
+    FP, TP = compute_tps_fps_new(projected_vecs_test=projected_vecs_test, labels_test=testing_label_ecog, fda_w=fda_w)
+    plot_roc(TP, FP)
+    auc = compute_auc(TP, FP)
+    print("AUC of testing phase: " , auc)
 
-        # apply the fda classifier
-        fda_w, fda_b = utils.fda_train(data=projected_vecs_train, label=labels_train)
-        
-        # compute the ys (classifications)
-        # ys = np.matmul(projected_vecs_test, fda_w)
-        
-        # normalize the ys to [0,1]
-        # ys = (ys - ys.min()) / np.ptp(ys)
 
-        
-        # compute test classification over 100 bias values
-        true_positives = []
-        false_positives = []
-        true_positives_rate = []
-        false_positives_rate = []
-        bias = np.linspace(0,1,10)
-        for b in bias:
-            scores, labels = utils.fda_test(projected_vecs_test, fda_w, fda_b=b)
-            TP,FP,FN,TN = utils.calc_confusion(labels, labels_test)
-            true_positives_rate.append(TP / (TP + FN))
-            try:
-                false_positives_rate.append(FP / (TN + FP)) 
-            except ZeroDivisionError:
-                false_positives_rate.append(0.0)
-            true_positives.append(TP)
-            false_positives.append(FP)
 
-        # true_positives, false_positives = compute_tps_and_fps(ys=ys, absolute=True)
-        plt.plot(true_positives, false_positives)
-        #plt.plot(true_positives_rate, false_positives_rate)
-        plt.show(block=True)
-
-        roc = np.vstack( (true_positives, false_positives ))
-        auc = utils.calc_AUC(roc)
-        print(auc)
-            
-            
