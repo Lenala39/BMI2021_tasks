@@ -1,5 +1,9 @@
 import numpy as np
+import math
 import matplotlib.pyplot as plt
+import mne
+import os
+import utils
 
 ##############################################
 #           P300 Speller data                #
@@ -22,12 +26,12 @@ channelAmount = data.shape[1]
 if (True):
 	#Dimensions the data will be reduced to
 	sampleAmount = 205
-	trialAmount = 4
-	subtrialAmount = 2
-	flashAmount = 3
+	trialAmount = 5
+	subtrialAmount = 10
+	flashAmount = 12
 	epochAmount = trialAmount * subtrialAmount * flashAmount
-	dataAmount = 5000
-	channelAmount = 5
+	dataAmount = 50000
+	channelAmount = 10
 
 	#Generating smaller testdata. Reduces data to the dimensions given above, cutting everything beyond those.
 	#This overrides the loaded data, so only use when testing.
@@ -166,3 +170,120 @@ for channel in avrgPerChannel:
   plt.ylabel("Amplitute [µV]")
   #plt.ion()
   plt.show()
+
+#-----------------------------------------------------------------------
+
+#Copied from utils.py
+def chan4plot():
+    # !!! Please adjust this path to point to the location where your p300speller.txt and biosemi32_mne-montage.txt is stored. 
+    chanpath = "D:\Studium\BMI\bmi2020_tasks\toolbox"
+    # Load channel infos (names + locations) and create info object for topo plots
+    with open(os.path.join(chanpath,'p300speller.txt')) as f:
+        chanlabel = f.read().splitlines()
+    M = mne.channels.read_montage(os.path.join(chanpath,'biosemi32_mne-montage.txt'))  
+    eeginfo = mne.create_info(chanlabel,256,'eeg',M)     
+    return eeginfo
+
+avrgPerChannel0 = np.zeros((channelAmount))
+channelId = -1
+for channel in avrgPerChannel:
+	channelId += 1
+	avrgPerChannel0[channelId] = channel[0][0]
+
+#mne.viz.plot_topomap(avrgPerChannel0, chan4plot, show=True)
+
+#calculating r²
+r2 = np.zeros((channelAmount, sampleAmount))
+channelId = -1
+for channel in avrgPerChannel:
+	channelId += 1
+	sampleId = -1
+	for sample in channel[0]:
+		sampleId += 1
+		r2[channelId][sampleId] = (sample - channel[1][sampleId])**2
+
+#todo get the friggin plotting to work
+
+#-----------------------------------------------------------------------
+
+foldAmount = 5
+
+downEpochs = utils.downsample(epochs, 10)
+
+epochPerFold = int(epochAmount/foldAmount)
+featurePerEpoch = int(round(downEpochs.shape[1] * channelAmount, 0))
+featureVectors = np.zeros((foldAmount, epochPerFold, featurePerEpoch))
+featureVectorLabels = np.zeros((foldAmount, epochPerFold))
+
+epochId = -1
+for epoch in downEpochs:
+	epochId += 1
+	featureId = -1
+	for sample in epoch:
+		for channel in sample:
+			featureId += 1
+			foldId = int(math.floor(epochId/epochPerFold))
+			eId = int(epochId % epochPerFold)
+			featureVectors[foldId][eId][featureId] = channel
+			featureVectorLabels[foldId][eId] = isTarget[epochId]
+			
+#-----------------------------------------------------------------------
+	
+steps = 100	
+	
+def scaleScores (scores):
+	scaledScores = np.copy(scores)
+	mx = np.amax(scores)
+	mn = np.amin(scores)
+	dif = mx - mn
+	
+	scoreId = -1
+	for score in scores:
+		scoreId += 1
+		scaledScores[scoreId] = (score - mn) / dif
+		
+	return scaledScores
+
+ysum = 0
+for trialId in range(foldAmount-1, -1, -1):
+	trainData = np.empty((0, featurePerEpoch))
+	trainLabels = np.empty((0))
+	foldId = -1
+	for fold in featureVectors:
+		foldId += 1
+		if(foldId != trialId):
+			trainData = np.concatenate((trainData, fold))
+			trainLabels = np.concatenate((trainLabels, featureVectorLabels[foldId]))
+	fda_w, fda_b = utils.fda_train(trainData, trainLabels)
+	scores, labels = utils.fda_test(featureVectors[trialId], fda_w, fda_b)
+	scaledScores = scaleScores(scores)
+	bias = np.linspace(0, 1, steps)
+	#0 tp 1 fp
+	positives = np.empty((2, steps))
+	bId = -1
+	for b in bias:
+		bId += 1
+		biasedLabels = np.empty((scores.shape[0]))
+		scoreId = -1
+		for score in scaledScores:
+			scoreId += 1
+			if(score < b):
+				biasedLabels[scoreId] = 0
+			else:
+				biasedLabels[scoreId] = 1
+		tp, fp, fn, tn = utils.calc_confusion(biasedLabels, featureVectorLabels[trialId], 1, 0)
+		positives[0][bId] = tp
+		positives[1][bId] = fp
+		
+	auc = np.trapz(np.flip(positives[0]), x=np.flip(positives[1]))
+	plt.title("ROC for fold " + str(trialId) + " AUC = " + str(auc))
+	plt.plot(positives[1], positives[0])
+	plt.xlim(0, steps)
+	plt.ylim(0, steps)
+	plt.xlabel("False Positive rate")
+	plt.ylabel("True Positive Rate")
+	#plt.ion()
+	plt.show()
+
+fda_w, fda_b = utils.fda_train(np.concatenate(featureVectors), np.concatenate(featureVectorLabels))
+print("fda_w = " + str(fda_w) + ", fda_b = " + str(fda_b))
