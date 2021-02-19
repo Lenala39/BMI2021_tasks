@@ -4,15 +4,14 @@
 import numpy as np
 import matplotlib.pylab as plt
 
-#import wavelet 
-#ermöglicht nutzen von funktoinen aus wavelet.py (Wie??)
-
 x = np.arange(-5,5, 0.001)
 sigma = 2
 f = 1
 s = np.sqrt(np.pi*sigma)*np.exp(2*np.pi*1j*f*x)*np.exp(-x**2/sigma)
 
 #data = np.loadtxt("avrgPerChannel.npy") ??
+#import wavelet 
+#ermöglicht nutzen von funktoinen aus wavelet.py (Wie??)
 
 plt.figure()
 
@@ -54,11 +53,9 @@ print(df)
 #No output! Why?
 #Outout is generated in a dedicated project tho.. ?
 
-
 #Plotting the spectrogram-----------------------------------------------------
 import numpy as np
 import matplotlib.pylab as plt
-import pylab as plt
 from wavelet import power
 
 df=pd.DataFrame(np.array([[1, 2, 3], [4, 5, 6], [7, 8, 9]]), columns=['a', 'b', 'c']) 
