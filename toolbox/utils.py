@@ -278,7 +278,7 @@ def fda_train(data, label):
     Sw = St + Snt
     
     invSw = linalg.inv(Sw)
-    # Rayleigh coefficient
+    # Rayleigh coefficient 
     fda_w = invSw @ (target_mean-non_target_mean).T
     print("fda.w size: ",fda_w.shape)
 
@@ -302,6 +302,7 @@ def fda_test(data, fda_w, fda_b):
         label   class label shaped [epochs]
     """
     scores = data @ fda_w
+    # added normalization?
     scores = (scores - scores.min()) / np.ptp(scores)
     label = np.sign(scores - fda_b)
     label = np.where(label < 0, 0, label) # convert -1 to 0
