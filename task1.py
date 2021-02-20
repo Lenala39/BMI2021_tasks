@@ -245,6 +245,7 @@ def scaleScores (scores):
 	return scaledScores
 
 ysum = 0
+m_thrs = np.empty(trialAmount)
 for trialId in range(foldAmount-1, -1, -1):
 	trainData = np.empty((0, featurePerEpoch))
 	trainLabels = np.empty((0))
@@ -256,6 +257,20 @@ for trialId in range(foldAmount-1, -1, -1):
 			trainLabels = np.concatenate((trainLabels, featureVectorLabels[foldId]))
 	fda_w, fda_b = utils.fda_train(trainData, trainLabels)
 	scores, labels = utils.fda_test(featureVectors[trialId], fda_w, fda_b)
+	
+	subtrialsPerFold = int(epochPerFold / flashAmount)
+	trialsPerFold = int(subtrialsPerFold / subtrialAmount)
+	trialLen = subtrialAmount * flashAmount
+	for tId in range(trialsPerFold):
+		ttId = trialsPerFold * trialId + tId
+		target = np.array([math.floor(targets[0][ttId]/6), 6+targets[0][ttId]%6])
+		sc = np.empty((subtrialAmount, flashAmount))
+		for subtrialId in range(subtrialAmount):
+			for flashId in range(flashAmount):
+				sc[subtrialId][flashId] = scores[tId*trialLen + subtrialId*flashAmount + flashId]
+		TPscore, M_thr, subtrial_index = utils.calcTPscore(sc, flashseq[ttId], target)
+		m_thrs[ttId] = M_thr
+	
 	scaledScores = scaleScores(scores)
 	bias = np.linspace(0, 1, steps)
 	#0 tp 1 fp
@@ -287,3 +302,9 @@ for trialId in range(foldAmount-1, -1, -1):
 
 fda_w, fda_b = utils.fda_train(np.concatenate(featureVectors), np.concatenate(featureVectorLabels))
 print("fda_w = " + str(fda_w) + ", fda_b = " + str(fda_b))
+
+M_thr = 0
+for thr in m_thrs:
+	M_thr += thr
+M_thr /= trialAmount
+print("M_thr = " + str(M_thr))
