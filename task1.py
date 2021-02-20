@@ -17,13 +17,16 @@ flashseq = D['flashseq']
 targets = D['targets']
 
 sampleAmount = 205
-epochAmount = onsets.shape[0]*onsets.shape[1]*onsets.shape[2]
+trialAmount = onsets.shape[0]
+subtrialAmount = onsets.shape[1]
+flashAmount = onsets.shape[2]
+epochAmount = trialAmount * subtrialAmount * flashAmount
 dataAmount = data.shape[0]
 channelAmount = data.shape[1]
 
 #-----------------------------------------------------------------------
 
-if (True):
+if (False):
 	#Dimensions the data will be reduced to
 	sampleAmount = 205
 	trialAmount = 5
