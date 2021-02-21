@@ -3,6 +3,7 @@ import math
 import matplotlib.pyplot as plt
 import mne
 import os
+import scipy
 import utils
 
 ##############################################
@@ -25,6 +26,7 @@ dataAmount = data.shape[0]
 channelAmount = data.shape[1]
 
 #-----------------------------------------------------------------------
+#reduction of data for testpurposes
 
 if (False):
 	#Dimensions the data will be reduced to
@@ -51,6 +53,7 @@ if (False):
 	targets = np.delete(targets, range(trialAmount,targets.shape[0]), 0)
 
 #-----------------------------------------------------------------------
+#task 1 segmenting data into epochs
 
 #The output array which contains the 3600 epochs, with 205 samples each on 10 channels
 epochs = np.zeros((epochAmount, sampleAmount, channelAmount))
@@ -82,6 +85,7 @@ for trial in onsets:
 			epochs[ep][0:sampleAmount] = data[idx:idx + sampleAmount]
 
 #-----------------------------------------------------------------------
+#task 2 creating a vector containing the label if the epoch is a target epoch or not
 
 #Vector that contains a 1 if the row/column flash contained the target  and 0 if not
 isTarget = np.zeros((epochAmount, 1))
@@ -114,6 +118,7 @@ for trial in flashseq:
       isTarget[ep] = checkTarget(flash, targets[0][tid])
 
 #-----------------------------------------------------------------------
+#task 3 generating ERP plots
 
 #Matrix that contains the average of the epochs for each channel.
 #It is split for target and non-target epochs.
@@ -175,6 +180,7 @@ for channel in avrgPerChannel:
   plt.show()
 
 #-----------------------------------------------------------------------
+#task 4 generating topoplots
 
 #Copied from utils.py
 def chan4plot():
@@ -208,18 +214,26 @@ for channel in avrgPerChannel:
 #todo get the friggin plotting to work
 
 #-----------------------------------------------------------------------
+#task 5 data preparation for cross-validation
 
+#I mixed up folds here, so every time fold is mentioned a datapartition is ment instead
+#Amount of partitions the Data is split into
 foldAmount = 5
 
-downEpochs = utils.downsample(epochs, 10)
+#legacy code for the downsampling per averaging
+#downEpochs = utils.downsample(epochs, 10)
 
 epochPerFold = int(epochAmount/foldAmount)
-featurePerEpoch = int(round(downEpochs.shape[1] * channelAmount, 0))
+#featurePerEpoch = int(round(downEpochs.shape[1] * channelAmount, 0))
+featurePerEpoch = int(round(sampleAmount * channelAmount, 0))
+#ndarray containing the prepareded epoch data (dataPartitions x epochsPerParition x features(=samples*channels))
 featureVectors = np.zeros((foldAmount, epochPerFold, featurePerEpoch))
+#ndarray containing the epochlabels of the perpared data (dataPartitions x epochsPerParition)
 featureVectorLabels = np.zeros((foldAmount, epochPerFold))
 
+#filling featureVectors and featureVectorLabels
 epochId = -1
-for epoch in downEpochs:
+for epoch in epochs:
 	epochId += 1
 	featureId = -1
 	for sample in epoch:
@@ -231,9 +245,35 @@ for epoch in downEpochs:
 			featureVectorLabels[foldId][eId] = isTarget[epochId]
 			
 #-----------------------------------------------------------------------
+#task 8 applying pca to prepared data
+
+"""
+Applying pca to the given data, reducing principal components, so that at most masLostVariance is lost
+input:
+data: ndarray with shape (epochs x features)
+maxLostVariance: the maximal variance that can be lost in decimal
+output:
+pcamat: ndarray containing the principal components with shape (features x principalComponents)
+"""
+def pca (data, maxLostVariance):
+	cov = np.cov(np.transpose(data))
+	pcamat, eigval, _ = scipy.linalg.svd(cov)
+	eigSum = sum(eigval)
+	loss = 0
+	for lostPCs in range(len(eigval)):
+		loss += eigval[-(lostPCs+1)] / eigSum
+		if(loss > maxLostVariance):
+			pcamat = pcamat[:, : -lostPCs or None]
+			break
+	return pcamat
 	
+#-----------------------------------------------------------------------
+#task 7-8 cross-validation and fda
+
+#steps for ROC generation
 steps = 100	
 	
+#scaling the given scores to [0-1]
 def scaleScores (scores):
 	scaledScores = np.copy(scores)
 	mx = np.amax(scores)
@@ -245,28 +285,42 @@ def scaleScores (scores):
 		scoreId += 1
 		scaledScores[scoreId] = (score - mn) / dif
 		
+	#print("scaledScores: " + str(scaledScores))
 	return scaledScores
 
-ysum = 0
+#thresholds for dynamic subtrial limitation
 m_thrs = np.empty(trialAmount)
+#going in reverse over all folds
 for trialId in range(foldAmount-1, -1, -1):
+	#data for training (epochs x features)
 	trainData = np.empty((0, featurePerEpoch))
+	#labels for trining data (epochs)
 	trainLabels = np.empty((0))
 	foldId = -1
 	for fold in featureVectors:
 		foldId += 1
+		#appending the training data
 		if(foldId != trialId):
 			trainData = np.concatenate((trainData, fold))
 			trainLabels = np.concatenate((trainLabels, featureVectorLabels[foldId]))
+	#doing pca on the training data and then reducing both training and test data according to the result
+	principalComponents = pca(trainData, 0.001)
+	trainData = np.matmul(trainData, principalComponents)
+	testData = np.matmul(featureVectors[trialId], principalComponents)
+	#generating the training vector and bias with the training data using fda
 	fda_w, fda_b = utils.fda_train(trainData, trainLabels)
-	scores, labels = utils.fda_test(featureVectors[trialId], fda_w, fda_b)
+	#applying fda to the testdata
+	scores, labels = utils.fda_test(testData, fda_w, fda_b)
 	
+	#calculating threshold for dynamyc subtrial limitation
 	subtrialsPerFold = int(epochPerFold / flashAmount)
 	trialsPerFold = int(subtrialsPerFold / subtrialAmount)
 	trialLen = subtrialAmount * flashAmount
 	for tId in range(trialsPerFold):
+		#true trial id
 		ttId = trialsPerFold * trialId + tId
 		target = np.array([math.floor(targets[0][ttId]/6), 6+targets[0][ttId]%6])
+		#scores for this trial
 		sc = np.empty((subtrialAmount, flashAmount))
 		for subtrialId in range(subtrialAmount):
 			for flashId in range(flashAmount):
@@ -274,6 +328,7 @@ for trialId in range(foldAmount-1, -1, -1):
 		TPscore, M_thr, subtrial_index = utils.calcTPscore(sc, flashseq[ttId], target)
 		m_thrs[ttId] = M_thr
 	
+	#generating ROC
 	scaledScores = scaleScores(scores)
 	bias = np.linspace(0, 1, steps)
 	#0 tp 1 fp
@@ -292,20 +347,21 @@ for trialId in range(foldAmount-1, -1, -1):
 		tp, fp, fn, tn = utils.calc_confusion(biasedLabels, featureVectorLabels[trialId], 1, 0)
 		positives[0][bId] = tp
 		positives[1][bId] = fp
-		
+	
+	#plotting ROC	
 	auc = np.trapz(np.flip(positives[0]), x=np.flip(positives[1]))
 	plt.title("ROC for fold " + str(trialId) + " AUC = " + str(auc))
 	plt.plot(positives[1], positives[0])
-	plt.xlim(0, steps)
-	plt.ylim(0, steps)
-	plt.xlabel("False Positive rate")
-	plt.ylabel("True Positive Rate")
+	plt.xlabel("False Positives")
+	plt.ylabel("True Positives")
 	#plt.ion()
 	plt.show()
 
-fda_w, fda_b = utils.fda_train(np.concatenate(featureVectors), np.concatenate(featureVectorLabels))
+#generating weight and bias for fda with full dataset
+fda_w, fda_b = utils.fda_train(np.concatenate(pca(featureVectors, 0.001)), np.concatenate(pca(featureVectorLabels, 0.001)))
 print("fda_w = " + str(fda_w) + ", fda_b = " + str(fda_b))
 
+#averaging over the thresholds for the dynamic subtrial limitation from all trials
 M_thr = 0
 for thr in m_thrs:
 	M_thr += thr
