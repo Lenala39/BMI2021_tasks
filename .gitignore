@@ -10,6 +10,9 @@ data/ecog_mi/Competition_test.mat
 __pycache__/
 *.py[cod]
 *$py.class
+.idea
+*.npy
+implementation_notes.txt
 
 # C extensions
 *.so
