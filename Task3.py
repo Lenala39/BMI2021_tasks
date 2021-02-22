@@ -1,4 +1,5 @@
-from toolbox import utils, ecog_load_data
+from toolbox import utils3 as utils
+from toolbox import ecog_load_data
 import mne.filter as filter
 import numpy as np
 import scipy.linalg as linalg
