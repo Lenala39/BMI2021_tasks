@@ -254,17 +254,8 @@ def fda_train(data, label):
     #non_targets = data[label!=1, :]
     targets = None
     non_targets = None
-    for i in range(len(data)):
-        if label[i] == 1:
-            try:
-                targets = np.vstack((targets, data[i]))
-            except ValueError: # first iteration -> first vec is start of data-array
-                targets = data[i]
-        else:
-            try:
-                non_targets = np.vstack((non_targets, data[i]))
-            except ValueError: # first iteration -> first vec is start of data-array
-                non_targets = data[i]
+    targets = data[label==1, :]
+    non_targets = data[label!=1, :]
 
     # mean of each class
     target_mean = np.mean(targets, axis=0)
