@@ -208,7 +208,7 @@ def training_cross_val(all_folds, ecog_neg, ecog_pos, load_from_file=False):
 
         # PLOT
         # plot the roc
-        plot_roc(true_positives, false_positives)
+        plot_roc(true_positives, false_positives, mode=f"Training (Fold {fold})")
         auc = compute_auc(true_positives, false_positives)
 
         # SELECT BEST fda_w
@@ -247,7 +247,7 @@ def training_full_data(ecog_neg, ecog_pos):
     projected_vecs_train = apply_projection_matrix(data=training_data, W=W)
     # apply fda_classifier -> training phase
     fda_w, fda_b = utils.fda_train(data=projected_vecs_train, label=labels_train)
-
+    
     return W, fda_w, fda_b
 
 
@@ -302,7 +302,7 @@ def compute_tps_fps(projected_vecs_test, labels_test, fda_w, absolute=True, step
         false_positives_rate.sort()
         return true_positives_rate, false_positives_rate
 
-def plot_roc(true_positives, false_positives):
+def plot_roc(true_positives, false_positives, mode="Testing"):
     """Uses matplotlib to plot the ROC curve
 
     Args:
@@ -315,10 +315,14 @@ def plot_roc(true_positives, false_positives):
     plt.subplot(211)
     # plot the two lists as x- and y-axis respectively
     plt.plot(false_positives, true_positives, label="ROC")
+    plt.xlim(0, len(true_positives))
+    plt.xticks(np.arange(0,60, step=10))
+    plt.ylim(0, len(false_positives))
+    plt.axis("square")
     # insert legend
     plt.legend(loc=0)
     # insert title
-    plt.title(label=f"ROC Curve with AUC of {auc}", loc="center")
+    plt.title(label=f"{mode}: ROC with AUC of {auc}", loc="center")
     # show the plot
     plt.show(block=True)
 
@@ -363,7 +367,7 @@ if __name__ == "__main__":
         W, fda_w, fda_b = training_cross_val(all_folds=all_folds, ecog_neg=ecog_neg, ecog_pos=ecog_pos, load_from_file=False)
     else:
         # TRAINING WITH ALL DATA
-        W, fda_w, fda_b = training_full_data(ecog_neg, ecog_pos, load_from_file=False)
+        W, fda_w, fda_b = training_full_data(ecog_neg, ecog_pos)
 
     print("DONE TRAINING >> STARTING TEST PHASE")
     
@@ -381,7 +385,7 @@ if __name__ == "__main__":
 
     # compute ROC and auc
     FP, TP = compute_tps_fps(projected_vecs_test=projected_vecs_test, labels_test=testing_label_ecog, fda_w=fda_w)
-    plot_roc(TP, FP)
+    plot_roc(TP, FP, mode="Testing")
     auc = compute_auc(TP, FP)
     print("AUC of testing phase: " , auc)
 
