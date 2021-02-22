@@ -268,7 +268,7 @@ def pca (data, maxLostVariance):
 	return pcamat
 	
 #-----------------------------------------------------------------------
-#task 7-8 cross-validation and fda
+#task 6-8 cross-validation and fda
 
 #steps for ROC generation
 steps = 100	
@@ -358,7 +358,9 @@ for trialId in range(foldAmount-1, -1, -1):
 	plt.show()
 
 #generating weight and bias for fda with full dataset
-fda_w, fda_b = utils.fda_train(np.concatenate(pca(featureVectors, 0.001)), np.concatenate(pca(featureVectorLabels, 0.001)))
+fv = np.concatenate(featureVectors)
+pc = pca(fv, 0.001)
+fda_w, fda_b = utils.fda_train(np.matmul(fv, pc), np.concatenate(featureVectorLabels))
 print("fda_w = " + str(fda_w) + ", fda_b = " + str(fda_b))
 
 #averaging over the thresholds for the dynamic subtrial limitation from all trials
