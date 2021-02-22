@@ -58,7 +58,7 @@ def wavelet_coeffs(data,srate,freqs,nco=2):
         coeffs = np.squeeze(coeffs[0,:,:])
         print("Removed dummy dimension from coeffs!")
 
-    return coeffs,Ws
+    return coeffs, Ws
 
 
 def  wavelet_power(coeffs,logpower=False):
