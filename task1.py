@@ -4,7 +4,7 @@ import matplotlib.pyplot as plt
 import mne
 import os
 import scipy
-import utils
+from toolbox import utils1 as utils
 
 ##############################################
 #           P300 Speller data                #
@@ -182,6 +182,9 @@ for channel in avrgPerChannel:
 #-----------------------------------------------------------------------
 #task 4 generating topoplots
 
+#amount of samplepoints for which topoplots are generated
+steps = 3
+
 #Copied from utils.py
 def chan4plot():
     # !!! Please adjust this path to point to the location where your p300speller.txt and biosemi32_mne-montage.txt is stored. 
@@ -193,14 +196,6 @@ def chan4plot():
     eeginfo = mne.create_info(chanlabel,256,'eeg',M)     
     return eeginfo
 
-avrgPerChannel0 = np.zeros((channelAmount))
-channelId = -1
-for channel in avrgPerChannel:
-	channelId += 1
-	avrgPerChannel0[channelId] = channel[0][0]
-
-mne.viz.plot_topomap(avrgPerChannel0, chan4plot(), show=True)
-
 #calculating r²
 r2 = np.zeros((channelAmount, sampleAmount))
 channelId = -1
@@ -210,8 +205,16 @@ for channel in avrgPerChannel:
 	for sample in channel[0]:
 		sampleId += 1
 		r2[channelId][sampleId] = (sample - channel[1][sampleId])**2
+		
+nonTargetAverage = avrgPerChannel[:,0,:]
+targetAverage = avrgPerChannel[:,1,:]
 
-#todo get the friggin plotting to work
+#plotting topomap for first and last samplepoint and the rest evenly spaced between
+samplePoints = [int(round(elem, 0)) for elem in np.linspace(0, sampleAmount-1, steps)]
+for point in samplePoints:
+	mne.viz.plot_topomap(nonTargetAverage[:,point], chan4plot(), show=True)
+	mne.viz.plot_topomap(targetAverage[:,point], chan4plot(), show=True)
+	mne.viz.plot_topomap(r2[:,point], chan4plot(), show=True)
 
 #-----------------------------------------------------------------------
 #task 5 data preparation for cross-validation
