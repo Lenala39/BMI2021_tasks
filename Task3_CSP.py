@@ -8,14 +8,30 @@ import os
 
 
 def filter_data_ecog(training_data_ecog):
-    # sfreq = sample frequency, iir = forward-backward filtering (via filtfilt)
+    """Filters data using mne.filter
+       Cutoff frequencies set to 8/30 Hz 
+    Args:
+        training_data_ecog (np.ndarray): contains the loaded data from .mat-files
+
+    Returns:
+        np.ndarray: filtered data
+    """
     filtered_data_ecog = filter.filter_data(data=training_data_ecog , sfreq=1000, l_freq=8, 
                                         h_freq=30, method="iir", n_jobs=6)
     return filtered_data_ecog
 
 
 def group_data(filtered_data_ecog, training_label_ecog):
-    # initialize ndarrays with correct dimensions -> 139 trials pos/neg
+    """Groups the filtered data according to the training labels (0,1)
+
+    Args:
+        filtered_data_ecog (np.ndarray): data to be grouped
+        training_label_ecog (np.ndarray): corresponding labels
+
+    Returns:
+        np.ndarray(s): negative and positive instances in seperate np.ndarrays
+    """
+    # init lists to store entries 
     data_ecog_pos = []
     data_ecog_neg = []
     
@@ -32,26 +48,54 @@ def group_data(filtered_data_ecog, training_label_ecog):
     # Convert back to ndarray
     data_ecog_neg = np.array(data_ecog_neg)
     data_ecog_pos = np.array(data_ecog_pos)
-    assert data_ecog_neg.shape == (139, 64, 3000)
+
     return data_ecog_neg, data_ecog_pos
 
 def input_formatting(data_ecog_neg, data_ecog_pos):
-    # average over the epochs (trials) -> 278 trials, 64 channels, 3000 samples
-    # result should be 64x3000 matrix
-    filtered_data_ecog_pos = np.mean(data_ecog_pos, axis=0)
-    filtered_data_ecog_neg = np.mean(data_ecog_neg, axis=0)
-    return filtered_data_ecog_neg, filtered_data_ecog_pos
+    """ average over the epochs (trials) -> 278 trials, 64 channels, 3000 samples
+        result should be 64x3000 matrix
+
+    Args:
+        data_ecog_neg (np.ndarray): array containing all negative instances
+        data_ecog_pos (np.ndarray): array containing all positive instances
+
+    Returns:
+        np.ndarray(s): averaged arrays over axis 0 -> shape reduced by one dimension
+    """
+    # average over the trials (axis=0)
+    averaged_data_pos = np.mean(data_ecog_pos, axis=0)
+    averaged_data_neg = np.mean(data_ecog_neg, axis=0)
+
+    return averaged_data_neg, averaged_data_pos
 
 def compute_covariance_matrices(filtered_data_ecog_neg, filtered_data_ecog_pos):
+    """Computes the covariance matrices of the respective input arrays
+
+    Args:
+        filtered_data_ecog_neg (np.ndarray): averaged, filtered negative instances in matric
+        filtered_data_ecog_pos (np.ndarray): averaged, filtered negative instances in matric
+
+    Returns:
+        np.ndarray(s): covariance matrices for each class and the between-class-covariance matrix
+    """
+    # compute covariance matrix
     cov_pos = np.cov(filtered_data_ecog_pos)
     cov_neg = np.cov(filtered_data_ecog_neg)
-    #cov_pos_norm = np.corrcoef(filtered_data_ecog_pos)
-    #cov_neg_norm = np.corrcoef(filtered_data_ecog_neg)
 
+    # compute sum of matrices -> between class covariance
     between_class_cov = cov_pos + cov_neg
     return cov_neg, cov_pos, between_class_cov
 
 def compute_eigenvalues_and_vectors(between_class_cov):
+    """Computes eigenvalues and vectors
+
+    Args:
+        between_class_cov (np.ndarray): between class covariance matrix
+
+    Returns:
+        np.ndarray(s): eigenvalues and vectors
+    """
+
     # compute eigenvalues (lamdba) and eigenvectors (V)
     eigenvalues, eigenvectors = np.linalg.eig(between_class_cov)
 
@@ -64,6 +108,15 @@ def compute_eigenvalues_and_vectors(between_class_cov):
     return eigenvalues, eigenvectors
 
 def whitening_transformation(eigenvalues, eigenvectors):
+    """Apply whitening transformation to recieve P
+
+    Args:
+        eigenvalues (np.ndarray): eigenvalues
+        eigenvectors (np.ndarray): eigenvectors
+
+    Returns:
+        np.ndarray: Projection matrix P (normalized)
+    """ 
     inverted_eigenvalues = np.flip(eigenvalues)
     P_normalized = np.dot(np.sqrt(np.diag(inverted_eigenvalues)), np.transpose(eigenvectors))
     
@@ -71,19 +124,38 @@ def whitening_transformation(eigenvalues, eigenvectors):
 
 
 def factorize_cov_matrix(P_normalized, cov_neg, cov_pos):
+    """Factorize Covariance matrices to respective eigenvectors
+
+    Args:
+        P_normalized (np.ndarray): projection matrix
+        cov_neg (np.ndarray): covariance matrix for negative class
+        cov_pos (np.ndarray): covariance matrix for positive class
+
+    Returns:
+        np.ndarray(s): eigenvalues as result of factorization (S1 and S2)
+    """
     # factorize cov matrices
     S_neg = np.dot(P_normalized, np.dot(cov_neg, np.transpose(P_normalized)))
     S_pos = np.dot(np.dot(P_normalized, cov_pos), np.transpose(P_normalized))
 
-    assert S_neg.all() == np.dot(np.dot(cov_neg, P_normalized), P_normalized.transpose()).all()
-    # TODO: assert that eigenvalues + eigenvalues = identity
     return S_neg, S_pos
 
 def sort_eigenvectors(S_neg, S_pos):
-    # compute generalized eigenvector problem
+    """Sort the eigenvectors from biggest to smallest value
+
+    Args:
+        S_neg (np.ndarray): Eigenvectors for negative class
+        S_pos (np.ndarray): Eigenvectors for positive class
+
+    Returns:
+        np.ndarray: common eigenvalues and -vectors
+    """
+    # compute generalized eigenvector problem to find common eigen...
     common_eigenvalues, common_eigenvectors = linalg.eig(S_neg, S_pos)
-    # create an ordering with argsort
+
+    # create an ordering with argsort -> list of indices in correct order
     ordering = np.argsort(common_eigenvalues)
+    
     # apply sorting on the eigenvalues and -vectors
     common_eigenvalues = common_eigenvalues[ordering]
     common_eigenvectors = common_eigenvectors[ordering]
@@ -91,6 +163,15 @@ def sort_eigenvectors(S_neg, S_pos):
     return common_eigenvalues, common_eigenvectors
 
 def data_preprocessing(training_data_ecog, training_label_ecog):
+    """Apply filtering and grouping to the data
+
+    Args:
+        training_data_ecog (np.ndarray): ecog data 
+        training_label_ecog (np.ndarray): labels for the data
+
+    Returns:
+        np.ndarray(s): filtered and grouped data
+    """
     # 1.0 apply mne filter method to data
     filtered_data_ecog = filter_data_ecog(training_data_ecog)
     # 2.0 group data according to label
@@ -98,6 +179,16 @@ def data_preprocessing(training_data_ecog, training_label_ecog):
     return ecog_neg, ecog_pos
     
 def CSP(ecog_neg, ecog_pos, cols=3):
+    """Compute the projection matrix W using CSP algorith,
+
+    Args:
+        ecog_neg (np.ndarray): negative class data
+        ecog_pos (np.ndarray): positive class data
+        cols (int, optional): Number of cols to keep on each side of W. Defaults to 3.
+
+    Returns:
+        np.ndarray: reduced projection matrix W
+    """
     # 2.1 "flatten" input into correct shape
     ecog_neg, ecog_pos = input_formatting(ecog_neg, ecog_pos)
     # 2.2 covariance matrices
