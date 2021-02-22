@@ -16,8 +16,8 @@ def filter_data_ecog(training_data_ecog):
     Returns:
         np.ndarray: filtered data
     """
-    filtered_data_ecog = filter.filter_data(data=training_data_ecog , sfreq=1000, l_freq=8, 
-                                        h_freq=30, method="iir", n_jobs=6)
+    filtered_data_ecog = filter.filter_data(data=training_data_ecog , sfreq=1000, l_freq=10, 
+                                        h_freq=25, method="iir", n_jobs=6)
     return filtered_data_ecog
 
 
