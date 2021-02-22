@@ -185,7 +185,7 @@ for channel in avrgPerChannel:
 #Copied from utils.py
 def chan4plot():
     # !!! Please adjust this path to point to the location where your p300speller.txt and biosemi32_mne-montage.txt is stored. 
-    chanpath = "D:\Studium\BMI\bmi2020_tasks\toolbox"
+    chanpath = "D:/Studium/BMI/bmi2020_tasks/toolbox"
     # Load channel infos (names + locations) and create info object for topo plots
     with open(os.path.join(chanpath,'p300speller.txt')) as f:
         chanlabel = f.read().splitlines()
@@ -199,7 +199,7 @@ for channel in avrgPerChannel:
 	channelId += 1
 	avrgPerChannel0[channelId] = channel[0][0]
 
-#mne.viz.plot_topomap(avrgPerChannel0, chan4plot, show=True)
+mne.viz.plot_topomap(avrgPerChannel0, chan4plot(), show=True)
 
 #calculating r²
 r2 = np.zeros((channelAmount, sampleAmount))
@@ -312,7 +312,7 @@ for trialId in range(foldAmount-1, -1, -1):
 	#applying fda to the testdata
 	scores, labels = utils.fda_test(testData, fda_w, fda_b)
 	
-	#calculating threshold for dynamyc subtrial limitation
+	#calculating threshold for dynamic subtrial limitation
 	subtrialsPerFold = int(epochPerFold / flashAmount)
 	trialsPerFold = int(subtrialsPerFold / subtrialAmount)
 	trialLen = subtrialAmount * flashAmount
@@ -350,7 +350,7 @@ for trialId in range(foldAmount-1, -1, -1):
 	
 	#plotting ROC	
 	auc = np.trapz(np.flip(positives[0]), x=np.flip(positives[1]))
-	plt.title("ROC for fold " + str(trialId) + " AUC = " + str(auc))
+	plt.title("ROC for fold " + str(foldAmount - 1 - trialId) + " AUC = " + str(auc))
 	plt.plot(positives[1], positives[0])
 	plt.xlabel("False Positives")
 	plt.ylabel("True Positives")
