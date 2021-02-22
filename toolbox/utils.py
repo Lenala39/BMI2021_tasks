@@ -18,7 +18,7 @@ def downsample(data,fac,avg="pick",axis=0):
 
     tmp = np.zeros((2,4))
     dims = data.shape
-    X = [];
+    X = []
 
     if len(dims)==3:
         samples = dims[1]
@@ -99,56 +99,74 @@ def cov_shrinkage(data,axis=0):
     return U
 
 
-def calcTPscore(ys,flashseq,target,isSpeller=1,doImg=0):
+def calcTPscore(ys, flashseq, target, plot=False):
+    """
+    :param ys: real-valued outputs of the LDA classifier with shape (subtrials, row_column_number)
+    :param flashseq: index of row/column flashing in epoch with shape (subtrials, row_column_number)
+    :param target: tuple (row, column) of the target element
+    :param plot: plot brightness matrix
+    :return:
+    """
 
-    subtrials = ys.shape[0]
-    M = np.zeros(ys.shape)
+    assert ys.shape == flashseq.shape,\
+        f'ys and flashseq shapes should be equals, {ys.shape} != {flashseq.shape}'
+    assert 0 <= target[0] <= 5
+    assert 6 <= target[1] <= 11
 
-    if(isSpeller):
-        rc = int(ys.shape[1]/2)
-        print(type(subtrials), subtrials)
-        print(type(rc), rc)
-        M_sp = np.zeros((rc,rc,subtrials))
+    # print('target:', target)
 
-    for i in range(subtrials):
-        dummy = np.array(zip(flashseq[i], ys[i])).transpose()
-        dummy = dummy[:, np.argsort(dummy[0])]
-        M[i] = dummy[1]
-        M_sp[:, :, i] = np.tile(M[i][0:rc],(rc,1))+np.tile(M[i][rc:],(rc,1)).transpose()
+    subtrials_number, row_col_number = ys.shape
 
-    print(['Target [', target[0], target[1], ']'])
+    assert row_col_number % 2 == 0,\
+        f'The total numbers of rows and column should be multiple of 2, but we have {row_col_number}'
+    rows_number = ys.shape[1] // 2
+    cols_number = rows_number
 
-    M_sum = np.zeros((rc, rc))
-    sbtrix = -1
-    for s in range(subtrials):
-        M_sum = M_sum + M_sp[:,:,s]
-        max_idx = np.argmax(M_sum)
-        max_col = int(np.floor(max_idx / rc))
-        max_row = int(max_idx-(max_col*rc))
-        
-        if doImg:
-            import matplotlib.pyplot as plt
-            tmp = np.reshape((scale(np.reshape(M_sum,-1,1),0,1)),rc,rc);
-            tmpsum = np.sum(scale(np.reshape(M_sum,-1,1),0,1));
-            fig,ax = plt.subplots()
-            cax = plt.ax.imshow(tmp,cmap='Greys',aspect='auto',extent=[0,tmp.shape[1],tmp.shape[0],0],origin='upper')
-            plt.title('St ',str(s),' | M-thr ',str(tmpsum),' | Target [',str(target[0]),' ',str(target[1],']'))
+    # vector of M matrices for every subtrial
+    M_vec = np.zeros((subtrials_number, rows_number, cols_number))
 
+    subtrial_index = None
 
-        print('subtrial %d max:[%d,%d], target: %r' % (s, max_row, max_col, target))
-        if max_col==target[1] and max_row==target[0]:
-            print(['Found correct row and col in subtrial No. ',str(s)])
-            sbtrix = s
+    # loop over the subtrials until the precision
+    for subtrial_i in range(subtrials_number):
+
+        for epoch_i in range(N_ROW_COL):
+            flash_i = flashseq[subtrial_i, epoch_i]
+            pred_score = ys[subtrial_i, epoch_i]
+            M = M_vec[subtrial_i]
+
+            # row flash, add value to row
+            if flash_i < 6:
+                M[flash_i,:] += pred_score
+            # column flash, add value to column
+            else:
+                M[:,flash_i - 6] += pred_score
+
+        # don't sum it up at the first iteration
+        if subtrial_i > 0:
+            M += M_vec[subtrial_i - 1]
+
+        max_row, max_col = np.unravel_index(M.argmax(), M.shape)
+        # print(max_row, max_col + rows_number)
+
+        if plot:
+            M_scaled = utils.scale(M_vec[subtrial_i].ravel(), 0, 1).reshape(rows_number, cols_number)
+            plot_brightness_matrix(M_scaled, subtrial_i, target, row_col_number)
+
+        # NOTE: columns of the P300 are indexed after rows
+        if max_row == target[0] and max_col + rows_number == target[1]:
+            # print('Found correct row and col in subtrial No. ', subtrial_i)
+            subtrial_index = subtrial_i
             break
 
-    if sbtrix != -1:
-        TPscore = M_sum[max_col, max_row]
-        M_tp = sum(scale(M_sum.flatten(), 0, 1))
+    if subtrial_index is not None:
+        TPscore = M_vec[subtrial_index, max_row, max_col]
+        M_thr = utils.scale(M_vec[subtrial_index].ravel(), 0, 1).sum()
     else:
         TPscore  = 0
-        M_tp = 0
+        M_thr = 0
 
-    return TPscore, M_tp, sbtrix
+    return TPscore, M_thr, subtrial_index
 
 
 
@@ -232,23 +250,32 @@ def fda_train(data, label):
     OUTPUT
     
     """
+    #targets = data[label==1, :]
+    #non_targets = data[label!=1, :]
+    targets = None
+    non_targets = None
     targets = data[label==1, :]
     non_targets = data[label!=1, :]
-    
+
+    # mean of each class
     target_mean = np.mean(targets, axis=0)
     non_target_mean = np.mean(non_targets, axis=0)
     
+    # covariance matrix within each class (scatter matrix)
     St = cov_shrinkage(targets)
     Snt = cov_shrinkage(non_targets)
     
+    # (within-class-scatter)
     Sw = St + Snt
     
     invSw = linalg.inv(Sw)
-    fda_w = invSw @ (posmean-negmean).T
+    # Rayleigh coefficient 
+    fda_w = invSw @ (target_mean-non_target_mean).T
     print("fda.w size: ",fda_w.shape)
 
     fda_target_mu = np.dot(target_mean, fda_w)
     fda_non_target_mu = np.dot(non_target_mean, fda_w)
+    # Fisher criterium
     fda_b = (fda_target_mu + fda_non_target_mu) / 2
     
     return fda_w, fda_b
@@ -266,7 +293,10 @@ def fda_test(data, fda_w, fda_b):
         label   class label shaped [epochs]
     """
     scores = data @ fda_w
-    label = np.sign(score - fda_b)
+    # added normalization?
+    scores = (scores - scores.min()) / np.ptp(scores)
+    label = np.sign(scores - fda_b)
+    label = np.where(label < 0, 0, label) # convert -1 to 0
     return scores, label
  
 

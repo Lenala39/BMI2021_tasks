@@ -5,6 +5,10 @@
 ### Python ###
 *.mat
 data/ecog_mi/Competition_test.mat
+.idea
+/data/avrgPerChannel.npy
+implementation_notes.txt
+W*_save.npy
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
